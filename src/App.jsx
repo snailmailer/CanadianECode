@@ -201,7 +201,32 @@ function App() {
             </header>
             <div className="content-body">
               <div className="content-text markdown-body">
-                <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                <ReactMarkdown 
+                  remarkPlugins={[remarkGfm]}
+                  components={{
+                    a: ({ href, children }) => {
+                      if (href && href.startsWith('#')) {
+                        const targetId = href.substring(1);
+                        const found = sectionsData.find(sec => sec.id === targetId || sec.id.includes(targetId));
+                        if (found) {
+                          return (
+                            <a
+                              href={href}
+                              onClick={(e) => {
+                                e.preventDefault();
+                                setSearchQuery('');
+                                setActiveSectionId(found.id);
+                              }}
+                            >
+                              {children}
+                            </a>
+                          );
+                        }
+                      }
+                      return <a href={href} target="_blank" rel="noopener noreferrer">{children}</a>;
+                    }
+                  }}
+                >
                   {activeSection.content}
                 </ReactMarkdown>
               </div>

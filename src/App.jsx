@@ -69,6 +69,7 @@ const TitleCasedChildren = ({ children }) => {
 };
 
 const HighlightedText = ({ text, highlight }) => {
+  if (!text) return null;
   if (!highlight || !highlight.trim()) return <>{text}</>;
   const escaped = highlight.trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   const regex = new RegExp(`(${escaped})`, 'gi');
@@ -162,12 +163,22 @@ function App() {
 
 
 
-  // Auto-scroll to the first highlighted match after navigation
+  // Auto-scroll to the highlighted match after navigation
   useEffect(() => {
     if (!highlightQuery) return;
     const timer = setTimeout(() => {
-      const el = document.querySelector('mark.search-highlight');
-      if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      const marks = Array.from(document.querySelectorAll('mark.search-highlight'));
+      if (marks.length > 0) {
+        // Find a mark that represents the definition (often wrapped in <strong>)
+        let targetEl = marks[0];
+        for (const mark of marks) {
+          if (mark.closest('strong') || mark.closest('h3') || mark.closest('h4')) {
+            targetEl = mark;
+            break;
+          }
+        }
+        targetEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      }
     }, 150);
     return () => clearTimeout(timer);
   }, [highlightQuery, activeSectionId]);

@@ -5,9 +5,18 @@ import './App.css';
 import sectionsData from './data/sections.json';
 
 function App() {
-  const [activeSectionId, setActiveSectionId] = useState(sectionsData[0]?.id);
+  const [activeSectionId, setActiveSectionId] = useState(sectionsData[0]?.id || 'contents');
   const [isPlaying, setIsPlaying] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
+  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+  const [expandedGroups, setExpandedGroups] = useState({
+    'General': true,
+    'Sections': true,
+    'Tables & Diagrams': true,
+    'Appendices': true,
+    'Index': true
+  });
+  
   const speechRef = useRef(null);
 
   const activeSection = sectionsData.find(sec => sec.id === activeSectionId);
@@ -19,6 +28,13 @@ function App() {
       setIsPlaying(false);
     }
   }, [activeSectionId, searchQuery]);
+
+  // Keep activeSectionId in sync if sectionsData loads/changes
+  useEffect(() => {
+    if (sectionsData.length > 0 && !sectionsData.find(sec => sec.id === activeSectionId)) {
+      setActiveSectionId(sectionsData[0].id);
+    }
+  }, [sectionsData]);
 
   const stripMarkdown = (md) => {
     if (!md) return '';
@@ -113,17 +129,46 @@ function App() {
 
   const searchResults = getSearchResults();
 
+  // Helper to categorize sections in sidebar
+  const getSectionGroup = (id) => {
+    if (id === 'contents') return 'General';
+    if (id.startsWith('section-')) return 'Sections';
+    if (id === 'tables' || id === 'diagrams') return 'Tables & Diagrams';
+    if (id.startsWith('appendix-')) return 'Appendices';
+    if (id === 'index') return 'Index';
+    return 'Other';
+  };
+
+  // Group sections
+  const groupedSections = {};
+  sectionsData.forEach(section => {
+    const grp = getSectionGroup(section.id);
+    if (!groupedSections[grp]) {
+      groupedSections[grp] = [];
+    }
+    groupedSections[grp].push(section);
+  });
+
+  const groupOrder = ['General', 'Sections', 'Tables & Diagrams', 'Appendices', 'Index'];
+
   return (
-    <div className="app-container">
+    <div className={`app-container ${isMobileMenuOpen ? 'menu-open' : ''}`}>
+      {/* Mobile Drawer Overlay */}
+      {isMobileMenuOpen && (
+        <div className="drawer-overlay" onClick={() => setIsMobileMenuOpen(false)}></div>
+      )}
+
       {/* Sidebar Navigation */}
       <aside className="sidebar">
         <div className="sidebar-header">
-          <h1>Your Guide to the Canadian Electrical Code</h1>
-          <p>2024 26th Edition</p>
+          <div className="sidebar-title-container">
+            <h1>Canadian Electrical Code</h1>
+            <p>2024 • 26th Edition</p>
+          </div>
           <div className="search-container">
             <input 
               type="text" 
-              placeholder="Search code..." 
+              placeholder="Search code book..." 
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               className="search-input"
@@ -131,24 +176,77 @@ function App() {
           </div>
         </div>
         <ul className="nav-list">
-          {sectionsData.map((section) => (
-            <li key={section.id} className="nav-item">
-              <button
-                className={`nav-button ${!searchQuery && activeSectionId === section.id ? 'active' : ''}`}
-                onClick={() => {
-                  setSearchQuery('');
-                  setActiveSectionId(section.id);
-                }}
-              >
-                {section.title}
-              </button>
-            </li>
-          ))}
+          {groupOrder.map((group) => {
+            const sections = groupedSections[group] || [];
+            if (sections.length === 0) return null;
+            
+            const isExpanded = expandedGroups[group];
+            
+            return (
+              <li key={group} className="nav-group-container">
+                <button 
+                  className="nav-group-header"
+                  onClick={() => setExpandedGroups(prev => ({ ...prev, [group]: !prev[group] }))}
+                >
+                  <span className="group-title-text">{group}</span>
+                  <svg 
+                    className={`chevron-icon ${isExpanded ? 'expanded' : ''}`} 
+                    width="14" 
+                    height="14" 
+                    viewBox="0 0 24 24" 
+                    fill="none" 
+                    stroke="currentColor" 
+                    strokeWidth="2.5" 
+                    strokeLinecap="round" 
+                    strokeLinejoin="round"
+                  >
+                    <polyline points="6 9 12 15 18 9"></polyline>
+                  </svg>
+                </button>
+                {isExpanded && (
+                  <ul className="nav-group-list">
+                    {sections.map((section) => (
+                      <li key={section.id} className="nav-item">
+                        <button
+                          className={`nav-button ${!searchQuery && activeSectionId === section.id ? 'active' : ''}`}
+                          onClick={() => {
+                            setSearchQuery('');
+                            setActiveSectionId(section.id);
+                            setIsMobileMenuOpen(false); // Close mobile drawer
+                          }}
+                        >
+                          {section.title}
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </li>
+            );
+          })}
         </ul>
       </aside>
 
       {/* Main Content Area */}
       <main className="main-content">
+        {/* Mobile Header Bar */}
+        <header className="mobile-header">
+          <button 
+            className="hamburger-button" 
+            onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
+            aria-label="Toggle Menu"
+          >
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <line x1="3" y1="12" x2="21" y2="12"></line>
+              <line x1="3" y1="6" x2="21" y2="6"></line>
+              <line x1="3" y1="18" x2="21" y2="18"></line>
+            </svg>
+          </button>
+          <div className="mobile-header-title">
+            <span>CEC 2024 Guide</span>
+          </div>
+        </header>
+
         {searchQuery ? (
           <>
             <header className="content-header">
@@ -161,6 +259,7 @@ function App() {
                     <div key={i} className="search-result-card" onClick={() => {
                       setSearchQuery('');
                       setActiveSectionId(res.sectionId);
+                      setIsMobileMenuOpen(false);
                     }}>
                       <h3>{res.title}</h3>
                       <p>{res.snippet}</p>
@@ -216,6 +315,7 @@ function App() {
                                 e.preventDefault();
                                 setSearchQuery('');
                                 setActiveSectionId(found.id);
+                                setIsMobileMenuOpen(false);
                               }}
                             >
                               {children}

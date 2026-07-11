@@ -1,13 +1,53 @@
 import { useState, useEffect, useRef } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
+import rehypeRaw from 'rehype-raw';
+import { visit } from 'unist-util-visit';
 import './App.css';
 import sectionsData from './data/sections.json';
+
+const rehypeHighlightWord = (options) => {
+  return (tree) => {
+    if (!options || !options.query) return;
+    const query = options.query.toLowerCase();
+    
+    visit(tree, 'text', (node, index, parent) => {
+      if (!node.value || !node.value.toLowerCase().includes(query)) return;
+      if (parent && parent.tagName === 'mark') return;
+
+      const escapedQuery = options.query.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      const regex = new RegExp(`(${escapedQuery})`, 'gi');
+      const parts = node.value.split(regex);
+      
+      const newNodes = [];
+      parts.forEach((part) => {
+        if (!part) return;
+        if (part.toLowerCase() === query) {
+          newNodes.push({
+            type: 'element',
+            tagName: 'mark',
+            properties: { className: ['search-highlight'] },
+            children: [{ type: 'text', value: part }]
+          });
+        } else {
+          newNodes.push({ type: 'text', value: part });
+        }
+      });
+
+      if (parent && parent.children) {
+        parent.children.splice(index, 1, ...newNodes);
+        // Returns the index to skip the newly inserted nodes to prevent infinite loop
+        return index + newNodes.length;
+      }
+    });
+  };
+};
 
 function App() {
   const [activeSectionId, setActiveSectionId] = useState(sectionsData[0]?.id || 'contents');
   const [isPlaying, setIsPlaying] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
+  const [highlightQuery, setHighlightQuery] = useState('');
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [expandedGroups, setExpandedGroups] = useState({
     'General': true,
@@ -211,6 +251,7 @@ function App() {
                           className={`nav-button ${!searchQuery && activeSectionId === section.id ? 'active' : ''}`}
                           onClick={() => {
                             setSearchQuery('');
+                            setHighlightQuery('');
                             setActiveSectionId(section.id);
                             setIsMobileMenuOpen(false); // Close mobile drawer
                           }}
@@ -257,6 +298,7 @@ function App() {
                 {searchResults.length > 0 ? (
                   searchResults.map((res, i) => (
                     <div key={i} className="search-result-card" onClick={() => {
+                      setHighlightQuery(searchQuery);
                       setSearchQuery('');
                       setActiveSectionId(res.sectionId);
                       setIsMobileMenuOpen(false);
@@ -302,6 +344,7 @@ function App() {
               <div className="content-text markdown-body">
                 <ReactMarkdown 
                   remarkPlugins={[remarkGfm]}
+                  rehypePlugins={[rehypeRaw, [rehypeHighlightWord, { query: highlightQuery }]]}
                   components={{
                     a: ({ href, children }) => {
                       if (href && href.startsWith('#')) {
@@ -314,6 +357,7 @@ function App() {
                               onClick={(e) => {
                                 e.preventDefault();
                                 setSearchQuery('');
+                                setHighlightQuery('');
                                 setActiveSectionId(found.id);
                                 setIsMobileMenuOpen(false);
                               }}

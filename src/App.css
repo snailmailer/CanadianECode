@@ -150,11 +150,53 @@
   margin: 0 auto;
 }
 
-.content-paragraph {
-  margin-bottom: 1.5rem;
+/* Markdown Styling */
+.markdown-body {
   font-size: 1.05rem;
   line-height: 1.7;
   color: var(--text-dark);
+}
+.markdown-body p {
+  margin-bottom: 1.25rem;
+}
+.markdown-body h1, .markdown-body h2, .markdown-body h3, .markdown-body h4 {
+  color: var(--primary-blue);
+  margin-top: 2rem;
+  margin-bottom: 1rem;
+  font-weight: 700;
+}
+.markdown-body h1 { font-size: 1.8rem; }
+.markdown-body h2 { font-size: 1.5rem; }
+.markdown-body h3 { font-size: 1.25rem; }
+.markdown-body ul, .markdown-body ol {
+  margin-bottom: 1.25rem;
+  padding-left: 1.5rem;
+}
+.markdown-body li {
+  margin-bottom: 0.5rem;
+}
+.markdown-body table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-bottom: 1.5rem;
+  font-size: 0.95rem;
+}
+.markdown-body th, .markdown-body td {
+  border: 1px solid var(--border-color);
+  padding: 10px 12px;
+  text-align: left;
+}
+.markdown-body th {
+  background-color: var(--bg-sidebar);
+  font-weight: 600;
+  color: var(--primary-blue);
+}
+.markdown-body tr:nth-child(even) {
+  background-color: #F8FAFC;
+}
+.markdown-body strong {
+  color: #0F172A;
+  font-weight: 600;
 }
 
 /* Scrollbar styling */
@@ -198,5 +240,55 @@
   .content-body {
     padding: 16px;
   }
+}
+
+
+.search-container {
+  margin-top: 12px;
+}
+.search-input {
+  width: 100%;
+  padding: 10px 12px;
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  font-family: inherit;
+  font-size: 0.9rem;
+  color: var(--text-dark);
+  background-color: white;
+  transition: border-color 0.2s;
+}
+.search-input:focus {
+  outline: none;
+  border-color: var(--primary-blue);
+  box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.1);
+}
+.search-results-container {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+.search-result-card {
+  padding: 20px;
+  border: 1px solid var(--border-color);
+  border-radius: 12px;
+  background-color: white;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  box-shadow: 0 2px 4px rgba(0,0,0,0.02);
+}
+.search-result-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(0,0,0,0.05);
+  border-color: var(--primary-blue);
+}
+.search-result-card h3 {
+  color: var(--primary-blue);
+  margin-bottom: 8px;
+  font-size: 1.1rem;
+}
+.search-result-card p {
+  color: var(--text-light);
+  font-size: 0.95rem;
+  line-height: 1.5;
 }
 

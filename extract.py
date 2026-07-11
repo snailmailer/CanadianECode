@@ -2,6 +2,7 @@ import fitz
 import json
 import os
 import re
+import pymupdf4llm
 
 pdf_path = r"C:\Users\Jovin\OneDrive\Documents\TRADES ELAP 309A\2024 CEC Code book.pdf"
 doc = fitz.open(pdf_path)
@@ -24,25 +25,19 @@ sections = [
     {"title": "Index", "start": 930, "end": 950}
 ]
 
-# Quick test to see if the page matches
-test_page = doc[53 - 1].get_text("text")
-print("FIRST 100 CHARS OF PAGE 53 (0-indexed 52):")
-print(test_page[:100])
-
 output_data = []
 
 for sec in sections:
     print(f"Extracting {sec['title']}...")
-    text = ""
-    # Assuming the numbers given by user are PDF physical pages (1-indexed)
+    
     start_idx = sec['start'] - 1
     end_idx = min(sec['end'] - 1, doc.page_count - 1)
     
-    for i in range(start_idx, end_idx + 1):
-        if i >= doc.page_count:
-            break
-        page = doc[i]
-        text += page.get_text("text") + "\n\n"
+    # create list of pages
+    page_numbers = list(range(start_idx, end_idx + 1))
+    
+    # Extract markdown directly from the document for these specific pages
+    md_text = pymupdf4llm.to_markdown(doc, pages=page_numbers)
     
     # create a clean id
     safe_id = re.sub(r'[^a-zA-Z0-9]+', '-', sec['title'].lower()).strip('-')
@@ -50,7 +45,7 @@ for sec in sections:
     output_data.append({
         "id": safe_id,
         "title": sec['title'],
-        "content": text
+        "content": md_text
     })
 
 os.makedirs("src/data", exist_ok=True)

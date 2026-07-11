@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, Children, isValidElement, cloneElement } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import './App.css';
@@ -9,6 +9,7 @@ function App() {
   const [isPlaying, setIsPlaying] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+  const [highlightTerm, setHighlightTerm] = useState('');
   const [expandedGroups, setExpandedGroups] = useState({
     'General': true,
     'Sections': true,
@@ -27,6 +28,9 @@ function App() {
       window.speechSynthesis.cancel();
       setIsPlaying(false);
     }
+    // NOTE: highlightTerm is NOT cleared here — clearing it on activeSectionId
+    // change would kill the highlight set by Contents-link or search-result clicks
+    // before the component even renders. It is cleared by explicit user actions instead.
   }, [activeSectionId, searchQuery]);
 
   // Keep activeSectionId in sync if sectionsData loads/changes
@@ -44,6 +48,67 @@ function App() {
       .replace(/\n\n+/g, '\n\n')
       .replace(/!\[([^\]]*)\]\([^\)]+\)/g, ''); // images
   };
+
+  // Preprocess the Contents section so each entry appears on its own line
+  const preprocessContents = (md) => {
+    if (!md) return md;
+    // Split on the pattern: italic page number (e.g. _53_ or _[53](#id)_) followed by a space
+    // and then the next entry. We insert a newline after each italic page number.
+    return md
+      // Insert newline after every inline italic page number that is followed by more text
+      // Matches: _number_ or _[number](#id)_ followed by a space and non-whitespace
+      .replace(/(_\[?\d+\]?(?:\(#[^)]+\))?_)(?= +[^\n])/g, '$1  \n')
+      // Also add newline before bold section headers that appear mid-paragraph
+      // (they start with **[ or **S after a space)
+      .replace(/ (?=\*\*\[)/g, '\n')
+      // Collapse any extra blank lines created
+      .replace(/\n{3,}/g, '\n\n');
+  };
+
+  // Strip raw HTML tags from PDF-extracted markdown so ReactMarkdown
+  // doesn't render them as literal text (e.g. <br>, <sup>, <span>, etc.)
+  const sanitizeMarkdown = (md) => {
+    if (!md) return md;
+    return md
+      .replace(/<br\s*\/?>/gi, '  \n')   // <br> → markdown hard line-break
+      .replace(/<[^>]+>/g, '');            // strip all other HTML tags
+  };
+
+  // Regex helpers for keyword highlighting
+  const escapeRegex = (str) => str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+  const highlightChildren = (nodes, term) => {
+    if (!term || !term.trim()) return nodes;
+    const escaped = escapeRegex(term.trim());
+    const regex = new RegExp(`(${escaped})`, 'gi');
+    return Children.map(nodes, (child) => {
+      if (typeof child === 'string') {
+        const parts = child.split(regex);
+        if (parts.length === 1) return child;
+        return parts.map((part, i) =>
+          part.toLowerCase() === term.trim().toLowerCase()
+            ? <mark key={i} className="search-highlight">{part}</mark>
+            : part
+        );
+      }
+      if (isValidElement(child) && child.props.children) {
+        return cloneElement(child, {
+          children: highlightChildren(child.props.children, term),
+        });
+      }
+      return child;
+    });
+  };
+
+  // Auto-scroll to the first highlighted match after navigation
+  useEffect(() => {
+    if (!highlightTerm) return;
+    const timer = setTimeout(() => {
+      const el = document.querySelector('mark.search-highlight');
+      if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }, 150);
+    return () => clearTimeout(timer);
+  }, [highlightTerm, activeSectionId]);
 
   const toggleSpeech = () => {
     if (!('speechSynthesis' in window)) {
@@ -170,7 +235,10 @@ function App() {
               type="text" 
               placeholder="Search code book..." 
               value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
+              onChange={(e) => {
+                setSearchQuery(e.target.value);
+                setHighlightTerm(''); // clear highlight when user types a new search
+              }}
               className="search-input"
             />
           </div>
@@ -212,6 +280,7 @@ function App() {
                           onClick={() => {
                             setSearchQuery('');
                             setActiveSectionId(section.id);
+                            setHighlightTerm(''); // Clear highlight on direct nav
                             setIsMobileMenuOpen(false); // Close mobile drawer
                           }}
                         >
@@ -257,6 +326,7 @@ function App() {
                 {searchResults.length > 0 ? (
                   searchResults.map((res, i) => (
                     <div key={i} className="search-result-card" onClick={() => {
+                      setHighlightTerm(searchQuery); // highlight the searched term in the section
                       setSearchQuery('');
                       setActiveSectionId(res.sectionId);
                       setIsMobileMenuOpen(false);
@@ -299,7 +369,7 @@ function App() {
               </button>
             </header>
             <div className="content-body">
-              <div className="content-text markdown-body">
+              <div className={`content-text markdown-body ${activeSection.id === 'contents' ? 'contents-page' : ''}`}>
                 <ReactMarkdown 
                   remarkPlugins={[remarkGfm]}
                   components={{
@@ -308,6 +378,10 @@ function App() {
                         const targetId = href.substring(1);
                         const found = sectionsData.find(sec => sec.id === targetId || sec.id.includes(targetId));
                         if (found) {
+                          // Extract plain text from link children to use as highlight target
+                          const linkText = Array.isArray(children)
+                            ? children.map(c => (typeof c === 'string' ? c : '')).join('')
+                            : typeof children === 'string' ? children : '';
                           return (
                             <a
                               href={href}
@@ -315,6 +389,13 @@ function App() {
                                 e.preventDefault();
                                 setSearchQuery('');
                                 setActiveSectionId(found.id);
+                                // If navigating from Contents and the link text is a topic (not a page number),
+                                // highlight that topic in the destination section
+                                if (activeSection?.id === 'contents' && linkText && isNaN(linkText.trim())) {
+                                  setHighlightTerm(linkText.trim());
+                                } else {
+                                  setHighlightTerm('');
+                                }
                                 setIsMobileMenuOpen(false);
                               }}
                             >
@@ -324,10 +405,20 @@ function App() {
                         }
                       }
                       return <a href={href} target="_blank" rel="noopener noreferrer">{children}</a>;
-                    }
+                    },
+                    p:  ({ children }) => <p>{highlightChildren(children, highlightTerm)}</p>,
+                    li: ({ children, ...props }) => <li {...props}>{highlightChildren(children, highlightTerm)}</li>,
+                    h1: ({ children }) => <h1>{highlightChildren(children, highlightTerm)}</h1>,
+                    h2: ({ children }) => <h2>{highlightChildren(children, highlightTerm)}</h2>,
+                    h3: ({ children }) => <h3>{highlightChildren(children, highlightTerm)}</h3>,
+                    h4: ({ children }) => <h4>{highlightChildren(children, highlightTerm)}</h4>,
+                    td: ({ children, ...props }) => <td {...props}>{highlightChildren(children, highlightTerm)}</td>,
+                    th: ({ children, ...props }) => <th {...props}>{highlightChildren(children, highlightTerm)}</th>,
                   }}
                 >
-                  {activeSection.content}
+                  {activeSection.id === 'contents'
+                    ? sanitizeMarkdown(preprocessContents(activeSection.content))
+                    : sanitizeMarkdown(activeSection.content)}
                 </ReactMarkdown>
               </div>
             </div>

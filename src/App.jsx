@@ -43,6 +43,34 @@ const rehypeHighlightWord = (options) => {
   };
 };
 
+const rehypeAddHighlightToLinks = () => {
+  return (tree) => {
+    visit(tree, 'element', (node) => {
+      if (node.tagName === 'p' || node.tagName === 'li') {
+         let topic = '';
+         const firstChild = node.children && node.children[0];
+         if (firstChild && firstChild.tagName === 'strong') {
+             topic = firstChild.children
+                .filter(c => c.type === 'text')
+                .map(c => c.value)
+                .join('')
+                .trim();
+         }
+         if (topic) {
+           visit(node, 'element', (linkNode) => {
+             if (linkNode.tagName === 'a' && linkNode.properties && linkNode.properties.href) {
+                const href = String(linkNode.properties.href);
+                if (href.startsWith('#') && !href.startsWith('#crossref-') && !href.includes('?hl=')) {
+                   linkNode.properties.href = `${href}?hl=${encodeURIComponent(topic)}`;
+                }
+             }
+           });
+         }
+      }
+    });
+  };
+};
+
 const toTitleCase = (str) => {
   if (typeof str !== 'string') return str;
   const articles = ['a', 'an', 'the', 'and', 'but', 'or', 'for', 'nor', 'on', 'at', 'to', 'from', 'by', 'with', 'in', 'of'];
@@ -79,7 +107,7 @@ const HighlightedText = ({ text, highlight }) => {
     <>
       {parts.map((part, i) => 
         part.toLowerCase() === highlight.trim().toLowerCase() 
-          ? <mark key={i} style={{ backgroundColor: '#F97316', color: 'white', padding: '0 2px', borderRadius: '3px' }}>{part}</mark> 
+          ? <mark key={i} className="search-highlight">{part}</mark> 
           : part
       )}
     </>
@@ -446,7 +474,7 @@ function App() {
               <div className={`content-text markdown-body ${activeSection.id === 'contents' ? 'contents-page' : ''}`}>
                 <ReactMarkdown 
                   remarkPlugins={[remarkGfm]}
-                  rehypePlugins={[rehypeRaw, [rehypeHighlightWord, { query: highlightQuery }]]}
+                  rehypePlugins={[rehypeRaw, rehypeAddHighlightToLinks, [rehypeHighlightWord, { query: highlightQuery }]]}
                   components={{
                     a: ({ href, children }) => {
                       if (href && href.startsWith('#crossref-')) {
@@ -468,10 +496,16 @@ function App() {
                         );
                       }
                       if (href && href.startsWith('#')) {
-                        const targetId = href.substring(1);
+                        let targetId = href.substring(1);
+                        let highlightFromUrl = '';
+                        if (targetId.includes('?hl=')) {
+                           const parts = targetId.split('?hl=');
+                           targetId = parts[0];
+                           highlightFromUrl = decodeURIComponent(parts[1]);
+                        }
+                        
                         const found = sectionsData.find(sec => sec.id === targetId || sec.id.includes(targetId));
                         if (found) {
-                          // Extract plain text from link children to use as highlight target
                           const linkText = Array.isArray(children)
                             ? children.map(c => (typeof c === 'string' ? c : '')).join('')
                             : typeof children === 'string' ? children : '';
@@ -481,11 +515,11 @@ function App() {
                               onClick={(e) => {
                                 e.preventDefault();
                                 setSearchQuery('');
-                                setHighlightQuery('');
                                 setActiveSectionId(found.id);
-                                // If navigating from Contents and the link text is a topic (not a page number),
-                                // highlight that topic in the destination section
-                                if (activeSection?.id === 'contents' && linkText && isNaN(linkText.trim())) {
+                                
+                                if (highlightFromUrl) {
+                                   setHighlightQuery(highlightFromUrl);
+                                } else if (activeSection?.id === 'contents' && linkText && isNaN(linkText.trim())) {
                                   setHighlightQuery(linkText.trim());
                                 } else {
                                   setHighlightQuery('');

@@ -457,13 +457,13 @@
   text-decoration: underline;
 }
 
-/* ── Keyword / topic highlight ── */
+/* ✨ Keyword / topic highlight ✨ */
 mark.search-highlight {
-  background-color: #FEF08A; /* warm amber yellow */
-  color: inherit;
+  background-color: #F97316;
+  color: white;
   padding: 0 2px;
   border-radius: 3px;
-  border-bottom: 2px solid #FACC15;
+  border-bottom: 2px solid #EA580C;
   font-weight: inherit;
   animation: highlightFadeIn 0.35s ease-out;
 }

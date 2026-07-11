@@ -44,6 +44,13 @@ const rehypeHighlightWord = (options) => {
 };
 
 const rehypeAddHighlightToLinks = () => {
+  const getText = (node) => {
+    if (!node) return '';
+    if (node.type === 'text') return node.value;
+    if (node.children) return node.children.map(getText).join('');
+    return '';
+  };
+
   return (tree) => {
     visit(tree, 'element', (node) => {
       if (node.tagName === 'p' || node.tagName === 'li') {
@@ -65,6 +72,33 @@ const rehypeAddHighlightToLinks = () => {
                 }
              }
            });
+         } else if (node.children) {
+           for (let i = 0; i < node.children.length; i++) {
+               const child = node.children[i];
+               let linkNode = null;
+               if (child.tagName === 'a') {
+                   linkNode = child;
+               } else if (child.tagName === 'em' && child.children && child.children[0] && child.children[0].tagName === 'a') {
+                   linkNode = child.children[0];
+               }
+               
+               if (linkNode && linkNode.properties && linkNode.properties.href) {
+                   const href = String(linkNode.properties.href);
+                   if (href.startsWith('#') && !href.startsWith('#crossref-') && !href.includes('?hl=')) {
+                       let precedingText = '';
+                       for (let j = 0; j < i; j++) {
+                           precedingText += getText(node.children[j]);
+                       }
+                       precedingText = precedingText
+                           .replace(/^[-\s•*_*#|—]+|[-\s•*_*#|—]+$/g, '')
+                           .trim();
+                           
+                       if (precedingText && precedingText.length < 100) {
+                           linkNode.properties.href = `${href}?hl=${encodeURIComponent(precedingText)}`;
+                       }
+                   }
+               }
+           }
          }
       }
     });
@@ -507,11 +541,28 @@ function App() {
                            highlightFromUrl = decodeURIComponent(parts[1]);
                         }
                         
+                        const linkText = Array.isArray(children)
+                          ? children.map(c => (typeof c === 'string' ? c : '')).join('')
+                          : typeof children === 'string' ? children : '';
+                        
+                        if (targetId === 'tables' && !highlightFromUrl) {
+                          const match = linkText.match(/Table[s]?\s+(\d+[A-Z]?)/i);
+                          if (match) {
+                            highlightFromUrl = `Table ${match[1]}`;
+                          } else {
+                            highlightFromUrl = linkText;
+                          }
+                        } else if (targetId === 'diagrams' && !highlightFromUrl) {
+                          const match = linkText.match(/Diagram[s]?\s+(\d+)/i);
+                          if (match) {
+                            highlightFromUrl = `Diagram ${match[1]}`;
+                          } else {
+                            highlightFromUrl = linkText;
+                          }
+                        }
+                        
                         const found = sectionsData.find(sec => sec.id === targetId || sec.id.includes(targetId));
                         if (found) {
-                          const linkText = Array.isArray(children)
-                            ? children.map(c => (typeof c === 'string' ? c : '')).join('')
-                            : typeof children === 'string' ? children : '';
                           return (
                             <a
                               href={href}

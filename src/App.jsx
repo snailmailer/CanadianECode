@@ -184,7 +184,10 @@ function App() {
       .replace(/<[^>]+>/g, '');            // strip all other HTML tags
       
     // Turn "see Topic ." into a link to Topic
-    sanitized = sanitized.replace(/\bsee\s+([A-Z][A-Za-z0-9 -]+?)(?=\s*\.)/g, '[see $1](#crossref-$1)');
+      sanitized = sanitized.replace(/\bsee\s+(?:\*\*([A-Z][A-Za-z0-9 -]+?)\*\*|([A-Z][A-Za-z0-9 -]+?))(?=\s*\.)/g, (match, p1, p2) => {
+        const topic = p1 || p2;
+        return `[see ${p1 ? `**${p1}**` : p2}](#crossref-${topic})`;
+      });
     
     return sanitized;
   };

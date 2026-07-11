@@ -43,6 +43,48 @@ const rehypeHighlightWord = (options) => {
   };
 };
 
+const toTitleCase = (str) => {
+  if (typeof str !== 'string') return str;
+  const articles = ['a', 'an', 'the', 'and', 'but', 'or', 'for', 'nor', 'on', 'at', 'to', 'from', 'by', 'with', 'in', 'of'];
+  return str.split(' ').map((word, index) => {
+    if (index > 0 && articles.includes(word.toLowerCase())) {
+      return word.toLowerCase();
+    }
+    return word.charAt(0).toUpperCase() + word.slice(1).toLowerCase();
+  }).join(' ');
+};
+
+const TitleCasedChildren = ({ children }) => {
+  return Children.map(children, child => {
+    if (typeof child === 'string') {
+      return toTitleCase(child);
+    }
+    if (isValidElement(child) && child.props.children) {
+      return cloneElement(child, {
+        children: <TitleCasedChildren>{child.props.children}</TitleCasedChildren>
+      });
+    }
+    return child;
+  });
+};
+
+const HighlightedText = ({ text, highlight }) => {
+  if (!highlight || !highlight.trim()) return <>{text}</>;
+  const escaped = highlight.trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const regex = new RegExp(`(${escaped})`, 'gi');
+  const parts = text.split(regex);
+  
+  return (
+    <>
+      {parts.map((part, i) => 
+        part.toLowerCase() === highlight.trim().toLowerCase() 
+          ? <mark key={i} style={{ backgroundColor: '#F97316', color: 'white', padding: '0 2px', borderRadius: '3px' }}>{part}</mark> 
+          : part
+      )}
+    </>
+  );
+};
+
 function App() {
   const [activeSectionId, setActiveSectionId] = useState(sectionsData[0]?.id || 'contents');
   const [isPlaying, setIsPlaying] = useState(false);
@@ -108,9 +150,14 @@ function App() {
   // doesn't render them as literal text (e.g. <br>, <sup>, <span>, etc.)
   const sanitizeMarkdown = (md) => {
     if (!md) return md;
-    return md
+    let sanitized = md
       .replace(/<br\s*\/?>/gi, '  \n')   // <br> → markdown hard line-break
       .replace(/<[^>]+>/g, '');            // strip all other HTML tags
+      
+    // Turn "see Topic ." into a link to Topic
+    sanitized = sanitized.replace(/\bsee\s+([A-Z][A-Za-z0-9 -]+?)(?=\s*\.)/g, '[see $1](#crossref-$1)');
+    
+    return sanitized;
   };
 
 
@@ -347,8 +394,8 @@ function App() {
                       setActiveSectionId(res.sectionId);
                       setIsMobileMenuOpen(false);
                     }}>
-                      <h3>{res.title}</h3>
-                      <p>{res.snippet}</p>
+                      <h3><HighlightedText text={res.title} highlight={searchQuery} /></h3>
+                      <p><HighlightedText text={res.snippet} highlight={searchQuery} /></p>
                     </div>
                   ))
                 ) : (
@@ -391,6 +438,24 @@ function App() {
                   rehypePlugins={[rehypeRaw, [rehypeHighlightWord, { query: highlightQuery }]]}
                   components={{
                     a: ({ href, children }) => {
+                      if (href && href.startsWith('#crossref-')) {
+                        const targetTopic = href.substring(10);
+                        return (
+                          <a href={href} className="cross-ref-link" onClick={(e) => {
+                            e.preventDefault();
+                            setSearchQuery('');
+                            setHighlightQuery(targetTopic);
+                            const targetRegex = new RegExp(`\\*\\*${targetTopic}\\*\\*`, 'i');
+                            const foundSection = sectionsData.find(sec => targetRegex.test(sec.content));
+                            if (foundSection && foundSection.id !== activeSectionId) {
+                               setActiveSectionId(foundSection.id);
+                            }
+                            setIsMobileMenuOpen(false);
+                          }}>
+                            {children}
+                          </a>
+                        );
+                      }
                       if (href && href.startsWith('#')) {
                         const targetId = href.substring(1);
                         const found = sectionsData.find(sec => sec.id === targetId || sec.id.includes(targetId));
@@ -423,7 +488,9 @@ function App() {
                         }
                       }
                       return <a href={href} target="_blank" rel="noopener noreferrer">{children}</a>;
-                    }
+                    },
+                    h3: ({ children }) => <h3><TitleCasedChildren>{children}</TitleCasedChildren></h3>,
+                    h4: ({ children }) => <h4><TitleCasedChildren>{children}</TitleCasedChildren></h4>,
                   }}
                 >
                   {activeSection.id === 'contents'

@@ -201,10 +201,10 @@ function App() {
     return md
       // Insert newline after every inline italic page number that is followed by more text
       // Matches: _number_ or _[number](#id)_ followed by a space and non-whitespace
-      .replace(/(_\[?\d+\]?(?:\(#[^)]+\))?_)(?= +[^\n])/g, '$1  \n')
+      .replace(/(_\[?\d+\]?(?:\(#[^)]+\))?_)(?= +[^\n])/g, '$1\n\n')
       // Also add newline before bold section headers that appear mid-paragraph
       // (they start with **[ or **S after a space)
-      .replace(/ (?=\*\*\[)/g, '\n')
+      .replace(/ (?=\*\*\[)/g, '\n\n')
       // Collapse any extra blank lines created
       .replace(/\n{3,}/g, '\n\n');
   };

@@ -809,10 +809,25 @@ function App() {
                               onClick={(e) => {
                                 e.preventDefault();
                                 setSearchQuery('');
-                                setActiveSectionId(found.id);
                                 
-                                if (highlightFromUrl) {
-                                   setHighlightQuery(highlightFromUrl);
+                                let nextSectionId = found.id;
+                                let nextHighlightQuery = highlightFromUrl;
+                                
+                                if (activeSectionId.startsWith('appendix-') && (targetId.startsWith('section-') || targetId === 'section-0')) {
+                                  nextSectionId = activeSectionId;
+                                  const secMatch = linkText.match(/Section\s+(\d+)/i);
+                                  if (secMatch) {
+                                    nextHighlightQuery = `Section ${secMatch[1]}`;
+                                  } else {
+                                    const secNum = targetId.split('-')[1];
+                                    nextHighlightQuery = `Section ${secNum || '0'}`;
+                                  }
+                                }
+                                
+                                setActiveSectionId(nextSectionId);
+                                
+                                if (nextHighlightQuery) {
+                                   setHighlightQuery(nextHighlightQuery);
                                 } else if (activeSection?.id === 'contents' && linkText && isNaN(linkText.trim())) {
                                   setHighlightQuery(linkText.trim());
                                 } else {

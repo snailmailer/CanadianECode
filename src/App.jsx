@@ -148,9 +148,12 @@ const HighlightedText = ({ text, highlight }) => {
   );
 };
 
+const BASE_URL = import.meta.env.BASE_URL || '/';
+
 function App() {
   const [activeSectionId, setActiveSectionId] = useState(sectionsData[0]?.id || 'contents');
   const [isPlaying, setIsPlaying] = useState(false);
+  const [isPaused, setIsPaused] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [highlightQuery, setHighlightQuery] = useState('');
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
@@ -171,6 +174,7 @@ function App() {
     if (window.speechSynthesis) {
       window.speechSynthesis.cancel();
       setIsPlaying(false);
+      setIsPaused(false);
     }
     // NOTE: highlightTerm is NOT cleared here — clearing it on activeSectionId
     // change would kill the highlight set by Contents-link or search-result clicks
@@ -255,11 +259,19 @@ function App() {
     }
 
     if (isPlaying) {
-      window.speechSynthesis.cancel();
-      setIsPlaying(false);
+      if (isPaused) {
+        // Resume
+        window.speechSynthesis.resume();
+        setIsPaused(false);
+      } else {
+        // Pause
+        window.speechSynthesis.pause();
+        setIsPaused(true);
+      }
     } else {
       if (activeSection) {
         window.speechSynthesis.cancel(); // clear queue
+        setIsPaused(false);
         
         // Strip markdown to make it readable
         const cleanText = stripMarkdown(activeSection.content);
@@ -271,13 +283,16 @@ function App() {
           if (index === paragraphs.length - 1) {
             utterance.onend = () => {
               setIsPlaying(false);
+              setIsPaused(false);
             };
           }
           
           utterance.onerror = (e) => {
+            if (e.error === 'interrupted') return; // cancel() triggered, ignore
             console.error("Speech synthesis error", e);
             window.speechSynthesis.cancel();
             setIsPlaying(false);
+            setIsPaused(false);
           };
 
           window.speechSynthesis.speak(utterance);
@@ -286,6 +301,14 @@ function App() {
         setIsPlaying(true);
       }
     }
+  };
+
+  const stopSpeech = () => {
+    if (window.speechSynthesis) {
+      window.speechSynthesis.cancel();
+    }
+    setIsPlaying(false);
+    setIsPaused(false);
   };
 
   // Clean up on unmount
@@ -484,28 +507,49 @@ function App() {
           <>
             <header className="content-header">
               <h2>{activeSection.title}</h2>
-              <button 
-                className={`tts-button ${isPlaying ? 'playing' : ''}`} 
-                onClick={toggleSpeech}
-                aria-label={isPlaying ? "Stop Reading" : "Read Aloud"}
-              >
-                {isPlaying ? (
-                  <>
-                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                      <rect x="6" y="4" width="4" height="16"></rect>
-                      <rect x="14" y="4" width="4" height="16"></rect>
+              <div className="tts-controls">
+                <button 
+                  className={`tts-button ${isPlaying ? (isPaused ? 'paused' : 'playing') : ''}`} 
+                  onClick={toggleSpeech}
+                  aria-label={!isPlaying ? 'Read Aloud' : isPaused ? 'Resume Reading' : 'Pause Reading'}
+                >
+                  {!isPlaying ? (
+                    <>
+                      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                        <polygon points="5 3 19 12 5 21 5 3" fill="currentColor"></polygon>
+                      </svg>
+                      Read Aloud
+                    </>
+                  ) : isPaused ? (
+                    <>
+                      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                        <polygon points="5 3 19 12 5 21 5 3" fill="currentColor"></polygon>
+                      </svg>
+                      Resume
+                    </>
+                  ) : (
+                    <>
+                      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                        <rect x="6" y="4" width="4" height="16" fill="currentColor"></rect>
+                        <rect x="14" y="4" width="4" height="16" fill="currentColor"></rect>
+                      </svg>
+                      Pause
+                    </>
+                  )}
+                </button>
+                {isPlaying && (
+                  <button
+                    className="tts-stop-button"
+                    onClick={stopSpeech}
+                    aria-label="Stop Reading"
+                    title="Stop"
+                  >
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" stroke="none">
+                      <rect x="4" y="4" width="16" height="16" rx="2"></rect>
                     </svg>
-                    Stop Reading
-                  </>
-                ) : (
-                  <>
-                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                      <polygon points="5 3 19 12 5 21 5 3"></polygon>
-                    </svg>
-                    Read Aloud
-                  </>
+                  </button>
                 )}
-              </button>
+              </div>
             </header>
             <div className="content-body">
               <div className={`content-text markdown-body ${activeSection.id === 'contents' ? 'contents-page' : ''}`}>
@@ -593,6 +637,21 @@ function App() {
                         <table>{children}</table>
                       </div>
                     ),
+                    img: ({ src, alt }) => {
+                      // Fix image paths for GitHub Pages base URL
+                      let resolvedSrc = src || '';
+                      if (resolvedSrc.startsWith('/') && !resolvedSrc.startsWith('//')) {
+                        // Strip leading slash and prepend BASE_URL
+                        const stripped = resolvedSrc.replace(/^\//, '');
+                        resolvedSrc = BASE_URL.replace(/\/$/, '') + '/' + stripped;
+                      }
+                      return (
+                        <figure className="diagram-figure">
+                          <img src={resolvedSrc} alt={alt || 'Diagram'} className="diagram-img" loading="lazy" />
+                          {alt && alt !== 'Diagram' && <figcaption>{alt}</figcaption>}
+                        </figure>
+                      );
+                    },
                     h3: ({ children }) => <h3><TitleCasedChildren>{children}</TitleCasedChildren></h3>,
                     h4: ({ children }) => <h4><TitleCasedChildren>{children}</TitleCasedChildren></h4>,
                   }}

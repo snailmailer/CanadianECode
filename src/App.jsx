@@ -165,7 +165,13 @@ function App() {
     'Index': true
   });
   
+  const [voices, setVoices] = useState([]);
+  const [selectedVoiceName, setSelectedVoiceName] = useState('');
+  const [speechRate, setSpeechRate] = useState(1.0);
+  const [showTtsSettings, setShowTtsSettings] = useState(false);
+  
   const speechRef = useRef(null);
+  const settingsRef = useRef(null);
 
   const activeSection = sectionsData.find(sec => sec.id === activeSectionId);
 
@@ -176,10 +182,53 @@ function App() {
       setIsPlaying(false);
       setIsPaused(false);
     }
-    // NOTE: highlightTerm is NOT cleared here — clearing it on activeSectionId
-    // change would kill the highlight set by Contents-link or search-result clicks
-    // before the component even renders. It is cleared by explicit user actions instead.
   }, [activeSectionId, searchQuery]);
+
+  // Load and populate speech synthesis voices
+  useEffect(() => {
+    if (!('speechSynthesis' in window)) return;
+
+    const updateVoices = () => {
+      const allVoices = window.speechSynthesis.getVoices();
+      
+      // Sort: English first, then others
+      const sortedVoices = [...allVoices].sort((a, b) => {
+        const aEn = a.lang.toLowerCase().startsWith('en');
+        const bEn = b.lang.toLowerCase().startsWith('en');
+        if (aEn && !bEn) return -1;
+        if (!aEn && bEn) return 1;
+        return a.name.localeCompare(b.name);
+      });
+      
+      setVoices(sortedVoices);
+      
+      // Default voice selection: prioritize Natural or Google US/UK English
+      const defaultVoice = sortedVoices.find(v => v.lang.toLowerCase().startsWith('en') && (v.name.includes('Google') || v.name.includes('Natural') || v.name.includes('Microsoft'))) ||
+                           sortedVoices.find(v => v.lang.toLowerCase().startsWith('en')) ||
+                           sortedVoices[0];
+      if (defaultVoice) {
+        setSelectedVoiceName(defaultVoice.name);
+      }
+    };
+
+    updateVoices();
+    if (window.speechSynthesis.onvoiceschanged !== undefined) {
+      window.speechSynthesis.onvoiceschanged = updateVoices;
+    }
+  }, []);
+
+  // Click outside to close TTS settings dropdown
+  useEffect(() => {
+    const handleClickOutside = (event) => {
+      if (settingsRef.current && !settingsRef.current.contains(event.target)) {
+        setShowTtsSettings(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, []);
 
   // Keep activeSectionId in sync if sectionsData loads/changes
   useEffect(() => {
@@ -195,6 +244,70 @@ function App() {
       .replace(/\[([^\]]+)\]\([^\)]+\)/g, '$1')
       .replace(/\n\n+/g, '\n\n')
       .replace(/!\[([^\]]*)\]\([^\)]+\)/g, ''); // images
+  };
+
+  const getTopicText = (content, query) => {
+    if (!query || !query.trim()) return content;
+    
+    const cleanQuery = query.trim().toLowerCase();
+    const blocks = content.split(/\n\n+/);
+    
+    const startIndex = blocks.findIndex(block => block.toLowerCase().includes(cleanQuery));
+    if (startIndex === -1) return content;
+    
+    const chosenBlocks = [blocks[startIndex]];
+    const startBlock = blocks[startIndex].trim();
+    
+    const isHeading = (block) => {
+      const b = block.trim();
+      return b.startsWith('#') || b.startsWith('**[') || b.startsWith('**');
+    };
+    
+    const getHeadingLevel = (block) => {
+      const b = block.trim();
+      if (b.startsWith('###')) return 3;
+      if (b.startsWith('##')) return 2;
+      if (b.startsWith('#')) return 1;
+      if (b.startsWith('**[')) return 3;
+      if (b.startsWith('**')) return 3;
+      return 99;
+    };
+    
+    if (isHeading(startBlock)) {
+      const startLevel = getHeadingLevel(startBlock);
+      for (let i = startIndex + 1; i < blocks.length; i++) {
+        const nextBlock = blocks[i].trim();
+        if (!nextBlock) continue;
+        if (isHeading(nextBlock)) {
+          const nextLevel = getHeadingLevel(nextBlock);
+          if (nextLevel <= startLevel) {
+            break;
+          }
+        }
+        chosenBlocks.push(blocks[i]);
+      }
+    }
+    
+    return chosenBlocks.join('\n\n');
+  };
+
+  const getSpeechText = () => {
+    // 1. Prioritize any manually highlighted selection on the page
+    const selection = window.getSelection().toString().trim();
+    if (selection) {
+      return { text: selection, type: 'selection' };
+    }
+    
+    // 2. Read only the chosen topic if a link was clicked/highlight query is present
+    if (highlightQuery && activeSection) {
+      const topicText = getTopicText(activeSection.content, highlightQuery);
+      if (topicText) {
+        return { text: topicText, type: 'topic', label: highlightQuery };
+      }
+    }
+    
+    // 3. Fallback to active section
+    return { text: activeSection ? activeSection.content : '', type: 'section' };
   };
 
   // Preprocess the Contents section so each entry appears on its own line
@@ -273,12 +386,21 @@ function App() {
         window.speechSynthesis.cancel(); // clear queue
         setIsPaused(false);
         
-        // Strip markdown to make it readable
-        const cleanText = stripMarkdown(activeSection.content);
+        const speechInfo = getSpeechText();
+        const cleanText = stripMarkdown(speechInfo.text);
         const paragraphs = cleanText.split('\n\n').filter(p => p.trim().length > 0);
+        
+        if (paragraphs.length === 0) return;
         
         paragraphs.forEach((para, index) => {
           const utterance = new SpeechSynthesisUtterance(para);
+          
+          if (selectedVoiceName) {
+            const voice = voices.find(v => v.name === selectedVoiceName);
+            if (voice) utterance.voice = voice;
+          }
+          
+          utterance.rate = speechRate;
           
           if (index === paragraphs.length - 1) {
             utterance.onend = () => {
@@ -288,7 +410,7 @@ function App() {
           }
           
           utterance.onerror = (e) => {
-            if (e.error === 'interrupted') return; // cancel() triggered, ignore
+            if (e.error === 'interrupted') return;
             console.error("Speech synthesis error", e);
             window.speechSynthesis.cancel();
             setIsPlaying(false);
@@ -507,7 +629,18 @@ function App() {
           <>
             <header className="content-header">
               <h2>{activeSection.title}</h2>
-              <div className="tts-controls">
+              <div className="tts-controls" ref={settingsRef}>
+                <div className="tts-mode-indicator">
+                  {highlightQuery ? (
+                    <span className="tts-mode-badge" title={`Will read only the section for: ${highlightQuery}`}>
+                      Topic: {highlightQuery}
+                    </span>
+                  ) : (
+                    <span className="tts-mode-badge secondary">
+                      Full Section
+                    </span>
+                  )}
+                </div>
                 <button 
                   className={`tts-button ${isPlaying ? (isPaused ? 'paused' : 'playing') : ''}`} 
                   onClick={toggleSpeech}
@@ -548,6 +681,57 @@ function App() {
                       <rect x="4" y="4" width="16" height="16" rx="2"></rect>
                     </svg>
                   </button>
+                )}
+                <button
+                  className={`tts-settings-toggle ${showTtsSettings ? 'active' : ''}`}
+                  onClick={() => setShowTtsSettings(!showTtsSettings)}
+                  aria-label="Speech Settings"
+                  title="Speech Settings"
+                >
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <circle cx="12" cy="12" r="3"></circle>
+                    <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
+                  </svg>
+                </button>
+                
+                {showTtsSettings && (
+                  <div className="tts-settings-dropdown">
+                    <div className="tts-setting-row">
+                      <label htmlFor="tts-voice-select">Reading Voice</label>
+                      <select 
+                        id="tts-voice-select"
+                        value={selectedVoiceName}
+                        onChange={(e) => setSelectedVoiceName(e.target.value)}
+                        className="tts-select"
+                      >
+                        {voices.map(voice => (
+                          <option key={voice.name} value={voice.name}>
+                            {voice.name} ({voice.lang})
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                    <div className="tts-setting-row">
+                      <label htmlFor="tts-rate-slider">Speed: {speechRate}x</label>
+                      <input 
+                        id="tts-rate-slider"
+                        type="range"
+                        min="0.5"
+                        max="2.0"
+                        step="0.1"
+                        value={speechRate}
+                        onChange={(e) => setSpeechRate(parseFloat(e.target.value))}
+                        className="tts-slider"
+                      />
+                    </div>
+                    <div className="tts-info-box">
+                      {highlightQuery ? (
+                        <span>Will read highlighted topic <strong>{highlightQuery}</strong>. Highlight/select any text on the page to read that instead.</span>
+                      ) : (
+                        <span>Will read the full section. Highlight/select any text on the page to read only that portion.</span>
+                      )}
+                    </div>
+                  </div>
                 )}
               </div>
             </header>

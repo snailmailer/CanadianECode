@@ -334,10 +334,12 @@ function App() {
     // Strip all HTML tags EXCEPT br, sup, sub, and u
     let sanitized = md.replace(/<(?!br\s*\/?>|sup\b|sub\b|u\b|\/sup\b|\/sub\b|\/u\b)[^>]*>/gi, '');
       
-    // Turn "see Topic ." into a link to Topic
-    sanitized = sanitized.replace(/\bsee\s+(?:\*\*([A-Z][A-Za-z0-9 -]+?)\*\*|([A-Z][A-Za-z0-9 -]+?))(?=\s*\.)/g, (match, p1, p2) => {
-      const topic = p1 || p2;
-      return `[see ${p1 ? `**${p1}**` : p2}](#crossref-${topic})`;
+    // Turn "see Topic." or "See Topic" (Index-style) into a crossref link
+    // Handles: see Topic., See Topic (newline), See also Topic
+    sanitized = sanitized.replace(/\b[Ss]ee(?:\s+also)?\s+(?:\*\*([A-Z][A-Za-z0-9 ,-]+?)\*\*|([A-Z][A-Za-z0-9 ,-]+?))(?=\s*[.\n)}\]]|$)/gm, (match, p1, p2) => {
+      const topic = (p1 || p2).trim();
+      const displayText = match.trim();
+      return `[${p1 ? displayText : displayText}](#crossref-${topic})`;
     });
     
     return sanitized;
@@ -749,9 +751,13 @@ function App() {
                             e.preventDefault();
                             setSearchQuery('');
                             setHighlightQuery(targetTopic);
-                            const targetRegex = new RegExp(`\\*\\*${targetTopic}\\*\\*`, 'i');
-                            const foundSection = sectionsData.find(sec => targetRegex.test(sec.content));
-                            if (foundSection && foundSection.id !== activeSectionId) {
+                            // Try bold match first, then plain text match
+                            const escapedTopic = targetTopic.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+                            const boldRegex = new RegExp(`\\*\\*${escapedTopic}\\*\\*`, 'i');
+                            const plainRegex = new RegExp(`(^|\\n)###?\\s.*${escapedTopic}`, 'i');
+                            const foundSection = sectionsData.find(sec => boldRegex.test(sec.content)) ||
+                                                 sectionsData.find(sec => plainRegex.test(sec.content));
+                            if (foundSection) {
                                setActiveSectionId(foundSection.id);
                             }
                             setIsMobileMenuOpen(false);
@@ -819,19 +825,16 @@ function App() {
                                 let nextSectionId = found.id;
                                 let nextHighlightQuery = highlightFromUrl;
                                 
-                                if (activeSectionId.startsWith('appendix-') && (targetId.startsWith('section-') || targetId === 'section-0')) {
+                                // Only stay on appendix for "Section X" text links (not rule number links)
+                                // Rule links (##-###) should navigate to the target section like Index does
+                                if (activeSectionId.startsWith('appendix-') && !ruleMatch && (targetId.startsWith('section-') || targetId === 'section-0')) {
                                   nextSectionId = activeSectionId;
-                                  // If the link text has a rule number (##-###), use it as the highlight
-                                  if (ruleMatch) {
-                                    nextHighlightQuery = ruleMatch[1];
+                                  const secMatch = linkText.match(/Section\s+(\d+)/i);
+                                  if (secMatch) {
+                                    nextHighlightQuery = `Section ${secMatch[1]}`;
                                   } else {
-                                    const secMatch = linkText.match(/Section\s+(\d+)/i);
-                                    if (secMatch) {
-                                      nextHighlightQuery = `Section ${secMatch[1]}`;
-                                    } else {
-                                      const secNum = targetId.split('-')[1];
-                                      nextHighlightQuery = `Section ${secNum || '0'}`;
-                                    }
+                                    const secNum = targetId.split('-')[1];
+                                    nextHighlightQuery = `Section ${secNum || '0'}`;
                                   }
                                 }
                                 

@@ -787,6 +787,18 @@ function App() {
                           } else {
                             highlightFromUrl = linkText;
                           }
+                        } else if (targetId.startsWith('appendix-') && !highlightFromUrl) {
+                          const match = linkText.match(/Appendix\s+([A-M])/i);
+                          if (match) {
+                            highlightFromUrl = `Appendix ${match[1].toUpperCase()}`;
+                          } else {
+                            const appendixLetter = targetId.split('-')[1]?.toUpperCase();
+                            if (appendixLetter) {
+                              highlightFromUrl = `Appendix ${appendixLetter}`;
+                            } else {
+                              highlightFromUrl = linkText;
+                            }
+                          }
                         }
                         
                         const found = sectionsData.find(sec => sec.id === targetId || sec.id.includes(targetId));

@@ -773,6 +773,9 @@ function App() {
                           ? children.map(c => (typeof c === 'string' ? c : '')).join('')
                           : typeof children === 'string' ? children : '';
                         
+                        // Detect ##-### rule number patterns in the link text (e.g. "38-054", "8-106", "26-700")
+                        const ruleMatch = linkText.match(/(\d{1,2}-\d{2,3})/);
+                        
                         if (targetId === 'tables' && !highlightFromUrl) {
                           const match = linkText.match(/Table[s]?\s+(\d+[A-Z]?)/i);
                           if (match) {
@@ -799,6 +802,9 @@ function App() {
                               highlightFromUrl = linkText;
                             }
                           }
+                        } else if (ruleMatch && !highlightFromUrl) {
+                          // For rule number links like [38-054](#section-38), highlight the rule number
+                          highlightFromUrl = ruleMatch[1];
                         }
                         
                         const found = sectionsData.find(sec => sec.id === targetId || sec.id.includes(targetId));
@@ -815,12 +821,17 @@ function App() {
                                 
                                 if (activeSectionId.startsWith('appendix-') && (targetId.startsWith('section-') || targetId === 'section-0')) {
                                   nextSectionId = activeSectionId;
-                                  const secMatch = linkText.match(/Section\s+(\d+)/i);
-                                  if (secMatch) {
-                                    nextHighlightQuery = `Section ${secMatch[1]}`;
+                                  // If the link text has a rule number (##-###), use it as the highlight
+                                  if (ruleMatch) {
+                                    nextHighlightQuery = ruleMatch[1];
                                   } else {
-                                    const secNum = targetId.split('-')[1];
-                                    nextHighlightQuery = `Section ${secNum || '0'}`;
+                                    const secMatch = linkText.match(/Section\s+(\d+)/i);
+                                    if (secMatch) {
+                                      nextHighlightQuery = `Section ${secMatch[1]}`;
+                                    } else {
+                                      const secNum = targetId.split('-')[1];
+                                      nextHighlightQuery = `Section ${secNum || '0'}`;
+                                    }
                                   }
                                 }
                                 

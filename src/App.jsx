@@ -213,15 +213,15 @@ function App() {
   // doesn't render them as literal text (e.g. <br>, <sup>, <span>, etc.)
   const sanitizeMarkdown = (md) => {
     if (!md) return md;
-    let sanitized = md
-      .replace(/<br\s*\/?>/gi, '  \n')   // <br> → markdown hard line-break
-      .replace(/<[^>]+>/g, '');            // strip all other HTML tags
+    
+    // Strip all HTML tags EXCEPT br, sup, sub, and u
+    let sanitized = md.replace(/<(?!br\s*\/?>|sup\b|sub\b|u\b|\/sup\b|\/sub\b|\/u\b)[^>]*>/gi, '');
       
     // Turn "see Topic ." into a link to Topic
-      sanitized = sanitized.replace(/\bsee\s+(?:\*\*([A-Z][A-Za-z0-9 -]+?)\*\*|([A-Z][A-Za-z0-9 -]+?))(?=\s*\.)/g, (match, p1, p2) => {
-        const topic = p1 || p2;
-        return `[see ${p1 ? `**${p1}**` : p2}](#crossref-${topic})`;
-      });
+    sanitized = sanitized.replace(/\bsee\s+(?:\*\*([A-Z][A-Za-z0-9 -]+?)\*\*|([A-Z][A-Za-z0-9 -]+?))(?=\s*\.)/g, (match, p1, p2) => {
+      const topic = p1 || p2;
+      return `[see ${p1 ? `**${p1}**` : p2}](#crossref-${topic})`;
+    });
     
     return sanitized;
   };
@@ -237,7 +237,7 @@ function App() {
         // Find a mark that represents the definition (often wrapped in <strong>)
         let targetEl = marks[0];
         for (const mark of marks) {
-          if (mark.closest('strong') || mark.closest('h3') || mark.closest('h4')) {
+          if (mark.closest('strong') || mark.closest('h1') || mark.closest('h2') || mark.closest('h3') || mark.closest('h4')) {
             targetEl = mark;
             break;
           }
@@ -588,6 +588,11 @@ function App() {
                       }
                       return <a href={href} target="_blank" rel="noopener noreferrer">{children}</a>;
                     },
+                    table: ({ children }) => (
+                      <div className="table-wrapper">
+                        <table>{children}</table>
+                      </div>
+                    ),
                     h3: ({ children }) => <h3><TitleCasedChildren>{children}</TitleCasedChildren></h3>,
                     h4: ({ children }) => <h4><TitleCasedChildren>{children}</TitleCasedChildren></h4>,
                   }}

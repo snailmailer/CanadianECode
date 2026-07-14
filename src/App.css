@@ -184,10 +184,18 @@
 .markdown-body li {
   margin-bottom: 0.5rem;
 }
+.table-wrapper {
+  width: 100%;
+  overflow-x: auto;
+  margin-bottom: 1.5rem;
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.02);
+}
 .markdown-body table {
   width: 100%;
+  min-width: max-content; /* Prevent columns from being crushed, allow scrolling if wide */
   border-collapse: collapse;
-  margin-bottom: 1.5rem;
   font-size: 14px;
 }
 .markdown-body th, .markdown-body td {
